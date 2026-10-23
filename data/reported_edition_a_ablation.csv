@@ -1,0 +1,7 @@
+organ,r2_inflated_67_features,r2_pruned_22_features,delta_r2,pruning_improved,taint,origin,is_synthetic
+liver,0.271,0.312,0.041,True,MEASURED,"MesoReach supervisor briefing, 20 October 2026 (project-reported; transcribed, not reproduced by this repository)",False
+spleen,0.148,0.194,0.046,True,MEASURED,"MesoReach supervisor briefing, 20 October 2026 (project-reported; transcribed, not reproduced by this repository)",False
+kidney,0.238,0.281,0.043,True,MEASURED,"MesoReach supervisor briefing, 20 October 2026 (project-reported; transcribed, not reproduced by this repository)",False
+lung,0.092,0.149,0.057,True,MEASURED,"MesoReach supervisor briefing, 20 October 2026 (project-reported; transcribed, not reproduced by this repository)",False
+heart,0.064,0.118,0.054,True,MEASURED,"MesoReach supervisor briefing, 20 October 2026 (project-reported; transcribed, not reproduced by this repository)",False
+tumour,0.219,0.264,0.045,True,MEASURED,"MesoReach supervisor briefing, 20 October 2026 (project-reported; transcribed, not reproduced by this repository)",False

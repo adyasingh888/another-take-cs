@@ -1,0 +1,7 @@
+organ,between_study_share,within_study_share,sums_to_one,max_r2_from_formulation_alone,taint,origin,is_synthetic
+liver,0.748,0.252,True,0.252,MEASURED,"MesoReach supervisor briefing, 20 October 2026 (project-reported; transcribed, not reproduced by this repository)",False
+spleen,0.793,0.207,True,0.207,MEASURED,"MesoReach supervisor briefing, 20 October 2026 (project-reported; transcribed, not reproduced by this repository)",False
+lung,0.841,0.159,True,0.159,MEASURED,"MesoReach supervisor briefing, 20 October 2026 (project-reported; transcribed, not reproduced by this repository)",False
+kidney,0.816,0.184,True,0.184,MEASURED,"MesoReach supervisor briefing, 20 October 2026 (project-reported; transcribed, not reproduced by this repository)",False
+heart,0.882,0.118,True,0.118,MEASURED,"MesoReach supervisor briefing, 20 October 2026 (project-reported; transcribed, not reproduced by this repository)",False
+tumour,0.774,0.226,True,0.226,MEASURED,"MesoReach supervisor briefing, 20 October 2026 (project-reported; transcribed, not reproduced by this repository)",False

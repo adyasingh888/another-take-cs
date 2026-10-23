@@ -276,3 +276,186 @@ anything — `IndirectResponseCell` is mechanistic so the coupling can be *exerc
 not because it is calibrated. Not a replacement for the brief's science. It is the
 argument that the science has a structure, and that the structure can be checked by
 running it.
+
+---
+
+# v0.5 — beyond the chain
+
+v0.1 implemented the delivery chain. v0.5 implements the **programme**: both loops,
+the bridge, the data layer, the mixing rules and the agent contract. The version is
+0.5 rather than 1.0 for a reason stated at the bottom of this section.
+
+## `phases.py` — Loop A is a loop, not a pipeline
+
+The brief's §04: "not just a linear target → drug chain: evidence can force revision
+of the target, delivery system, or entire mechanistic hypothesis." A pipeline cannot
+express that, so each phase declares **revision edges** — which earlier phases its
+failure can send you back to. A Phase 4 failure revises Phase 3 before Phase 2:
+latest first, because that discards the least work, and because exhausting delivery
+explanations before abandoning a target is the right scientific order.
+
+**Simulation happens twice, and conflating the two is a real error.**
+
+| | Phase 2 | Phase 4 |
+|---|---|---|
+| what it simulates | the virtual cell | the full delivery chain |
+| delivery | **assumed perfect** | **is the question** |
+| answers | would suppressing this target matter? | does this formulation reach it? |
+
+`PhaseResult.may_claim_reachability()` refuses a Phase 2 result read as reachability
+evidence — which is precisely the "assumes the therapeutic is already inside the
+target cell" error the brief names in its executive summary. And `validate_inference`
+refuses a Phase 5 that compared fewer than two mechanisms, because a single mechanism
+without rivals is a hypothesis restated.
+
+## `patient.py` — Loop B is a different operation
+
+Two sentences from the brief are this module's whole design: the patient loop's task
+is "state estimation and supported response modelling", and "updating a patient-state
+posterior is not the same as retraining or deploying a population model."
+
+So `reverse_translate` returns a **research hypothesis** and has *no code path* that
+touches a model version. There is nothing to misconfigure.
+
+**`c_patient` is mechanism-typed, not a feature vector.** Each field declares which
+stage it modulates and in which direction:
+
+| field | stage | direction | routine? |
+|---|---|---|---|
+| `apoe_plasma` | corona | +1 | no |
+| `complement_c3` / `c4` / `crp` | corona | −1 | yes |
+| `anti_peg_igg` | organ | −1 | no |
+| `hepatic_fibrosis_stage` | barrier | −1 | yes |
+| `egfr` | organ | −1 | yes |
+| `albumin` | corona | **0** — direction not established | yes |
+
+Two reasons this matters. Fields modulating different stages enter the model at
+different places, and with 29 patients there is no prospect of recovering that from
+data. And a declared direction is checkable: if fibrosis is declared to reduce
+parenchymal access and the fitted effect goes the other way, *that is a finding* —
+but only because the direction was committed in advance. Where the direction is
+genuinely unknown (`albumin`) it is declared zero rather than guessed.
+
+`context_coverage` reports which stages have **no** routinely available modulator and
+therefore cannot be personalised at all — the model still runs there, on population
+parameters, and should say so rather than implying patient-specificity.
+
+**The patient-count problem is enforced, not noted.** The brief states it twice:
+215 observations from 29 patients are not 215 samples. At ICC 0.5 the design effect
+is 4.2 and the effective n is **51**. `require_independent_patients` raises on any
+claim that used the observation count as a sample size.
+
+## `multimodal.py` — what may be mixed, and how
+
+Seven corpora, **six different units of observation**. The naive move — stack the
+tables, add a modality column, train one model — fails not on scale or architecture
+but because *the rows mean different things*. A corona row is a protein share for one
+plasma; a PBPK row is an organ amount for one animal at one timepoint; a HepG2 row is
+a well of a cell line that never saw an animal.
+
+Five techniques, in increasing order of what they assume:
+
+| technique | assumes | couples stages? |
+|---|---|---|
+| **linkage** | identity genuinely matches (formulation **and batch**) | yes, where it matches |
+| **late fusion** | modalities predict the same target | no — the correct default |
+| **partial pooling** | groups exchangeable *at the group level* | no |
+| **shared parameter** | one physical parameter is common — **and tests it** | yes |
+| **reweighting** | target support ⊆ source support | no |
+
+`shared_parameter` is the only one that genuinely couples stages, and it is the only
+one that can **refuse**: if two modalities' estimates disagree beyond their stated
+precision (Cochran's Q), the shared-parameter assumption is refuted and *no pooled
+estimate is returned*. Widening the interval instead would hide the refutation.
+
+`covariate_shift_weights` checks support before weighting, because a clinical cohort
+contains patients no mouse study covers — and a large clipped weight is extrapolation
+wearing a weight's clothing.
+
+`early_fusion` exists only to **raise**, with the reason and the alternatives, so the
+rule lives in code rather than in a README a future contributor has not read.
+
+**`icc_oneway`** was added after a test failure. The naive ratio
+var(group means)/var(all) estimates (τ²+σ²/m)/(τ²+σ²) and so **exceeds** the ICC for
+every m > 1 — measured here at 0.865 against a true 0.739 with four arms per study.
+The function reports both and the gap between them, because a bare percentage does
+not say which was computed.
+
+## `critic.py` — four rivals, one posterior
+
+The brief's §14: compare uptake-limited, release-limited, degradation-limited and
+target-response explanations. Each has a **signature** — the pattern that would
+distinguish it — and a direct next measurement.
+
+Comparison is by BIC-approximated model evidence, so a mechanism is not favoured for
+having more freedom. The most useful output is often **"not distinguishable"**: a
+statement about the *data* rather than about the models, returned with the
+discriminating experiment attached. `discriminating_design` ranks conditions by how
+much the mechanisms *disagree* — never by where the favoured one looks best, which is
+how a critic becomes a confirmation engine.
+
+## `datasets.py` — two kinds of number, separated by type
+
+**Reported** figures are transcribed from the brief and carry its origin string;
+this repository has not reproduced them. The one thing it *computes* is the ablation
+sign test, because that is arithmetic over the transcribed values — and it recomputes
+to **p = 0.03125**, matching the reported 0.0312 exactly.
+
+**Generated** tables reproduce the *structure* of the problem (86 study groups, the
+reported ICC, the pKa optimum, 29 patients × ~7.4 visits) and deliberately **not** its
+values. Every row carries `is_synthetic = True` and an origin naming what it does not
+reproduce.
+
+The brief's §17 gate — "Do not create synthetic 'ground truth' to fill the gap" — is
+enforced by `as_measurement()`, which raises on any frame containing a synthetic row.
+**There is no override flag**, and a test asserts there is none: the entire value of
+the rule is that a caller in a hurry cannot bypass it.
+
+Shipped under `data/`: 7 tables, 3 reported and 4 generated.
+
+## `agents.py` — the one axis on which an agent layer can differ
+
+The brief's originality boundary: "Building six prompt personas does not make a new
+scientist." So this is not an agent framework — it is the **scoring protocol** that
+would settle the question, plus five roles each declaring *what it may not do* (which
+is where agent architectures actually fail: roles that quietly acquire each other's
+powers), and the module that can check it.
+
+Of the brief's six criteria, only **correct refusal** can distinguish an
+evidence-aware agent from a fixed workflow with the same tools — a good fixed
+workflow gets the valid links right too; what it cannot do is decline a link that
+looks computable and is not supported. `score_refusals` returns a confusion table and
+**no single score**: a false permit propagates an unsupported number into a
+conclusion, a false refusal costs an analysis, and an F1 that treats them as
+interchangeable is the wrong summary. `versus_baselines` reports "no measured
+advantage" as a *finding about agent architectures*, not a null to bury.
+
+## Further errors this repository found in itself (v0.5)
+
+6. **Rounding broke the simplex.** The corona generator rounded shares to 5 dp, and
+   six parts at that precision drift by up to 3 × 10⁻⁵ — enough to fail the invariant
+   the module enforces. The artefact would have shipped simplex-violating. Fixed with
+   largest-remainder apportionment, which unlike "adjust the biggest part" does not
+   bias one component.
+7. **A biased variance estimator in my own test.** The generated ICC "failed" at
+   0.861 against a 0.748 target. The generator was right; the test used
+   var(group means)/var(all), which is the same upward bias this session had already
+   flagged for group-count effect sizes.
+8. **An unreachable refusal.** `critic.compare` checked the observation count before
+   the mechanism count, so the single-mechanism refusal never fired when the caller
+   also passed one observation — the error named the wrong problem. Argument validity
+   now precedes data adequacy.
+
+## Why 0.5 and not 1.0
+
+Everything the architecture needs is implemented and tested: both loops, the bridge,
+the typed state, the gates, the mixing rules, the data wall, the agent contract. What
+is missing is not code.
+
+**1.0 requires one measurement.** The organ→cytosol handoff is structurally
+unidentifiable from whole-organ data (`observability`), and
+`credibility("predict_target_cell_exposure")` will refuse until it is closed. The
+minimal fix the module returns is a flow-sorted parenchymal measurement. Until a
+paired dataset exists, no version of this repository can honestly be 1.0 — and
+raising the number without the measurement would be the one thing every module here
+is built to prevent.

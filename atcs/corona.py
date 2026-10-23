@@ -58,6 +58,36 @@ def softmax_composition(logits: Mapping[str, float]) -> dict[str, float]:
     return {k: float(v) for k, v in zip(ks, e / e.sum())}
 
 
+def round_composition(shares: Mapping[str, float], dp: int = 5) -> dict[str, float]:
+    """Round a composition so the parts STILL sum to one at the given precision.
+
+    Naive rounding breaks the simplex: six species at 5 dp can drift by 3e-5, which
+    is enough to fail the state-group invariant. This is not pedantry -- it was
+    caught by an assertion in this repository's own data generator, which would
+    otherwise have written a simplex-violating table to disk and shipped it.
+
+    Largest-remainder method: round everything down to the grid, then distribute the
+    deficit one unit at a time to the parts with the largest discarded remainder.
+    This is the standard apportionment rule, and unlike "adjust the biggest part to
+    absorb the error" it does not systematically bias one component.
+    """
+    if not shares:
+        raise CompositionError("no composition to round")
+    ks = list(shares)
+    scale = 10 ** dp
+    exact = np.asarray([float(shares[k]) for k in ks]) * scale
+    floor = np.floor(exact)
+    deficit = int(round(scale - floor.sum()))
+    order = np.argsort(-(exact - floor))
+    for i in range(max(deficit, 0)):
+        floor[order[i % len(ks)]] += 1
+    out = {k: float(v / scale) for k, v in zip(ks, floor)}
+    if abs(sum(out.values()) - 1.0) > 1e-12:
+        raise CompositionError(
+            f"rounding failed to preserve the simplex: sum = {sum(out.values())!r}")
+    return out
+
+
 def log_ratio(shares: Mapping[str, float], numerator: str, denominator: str,
               floor: float = 1e-6) -> float:
     """log10 of a ratio between two shares -- the interpretable contrast.

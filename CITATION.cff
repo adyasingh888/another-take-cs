@@ -5,7 +5,7 @@ type: software
 authors:
   - family-names: Singh
     given-names: Adya
-version: 0.1.0
+version: 0.5.0
 date-released: 2026-10-23
 license: MIT
 abstract: >-

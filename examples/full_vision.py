@@ -172,6 +172,104 @@ def s8_agents():
     print(f"   (no single score: {out['arms']['ours']['no_single_score'][:110]})")
 
 
+def s9_experiment():
+    print(f"\n{L}\n9. The next experiment, as a checkable object\n{L}")
+    from atcs.experiment import ExperimentSpec, Resource, rank
+    from atcs.models import CYTOSOL_CANDIDATES, ORGAN_TO_CYTOSOL
+    cand = {c.name: c for c in CYTOSOL_CANDIDATES}
+    specs = [
+        ExperimentSpec("flow-sorted parenchymal fraction",
+                       (cand["flow_sorted_parenchymal"],), "f_parenchymal",
+                       0.30, 12, 4, 0.75, 0.35,
+                       Resource(animals=48, assay_runs=12, weeks=6.0),
+                       "closes the parenchymal fraction, which no whole-organ assay can"),
+        ExperimentSpec("another homogenate series",
+                       (ORGAN_TO_CYTOSOL.observations[0],), "f_parenchymal",
+                       0.30, 30, 6, 0.80, 0.35,
+                       Resource(animals=180, assay_runs=30, weeks=10.0),
+                       "more of the measurement already in hand, at larger n"),
+    ]
+    out = rank(specs, ORGAN_TO_CYTOSOL)
+    for r in (out["ranked"] or out["candidates"]):
+        print(f"   {r['experiment']:34s} closes={str(r['closes']):5s} "
+              f"power={r['power']:.2f} cost={r['cost_units']:>6.1f} "
+              f"blocker={r['binding_constraint']}")
+    print(f"\n   {out['headline'][:190]}")
+    a = specs[0].assess(ORGAN_TO_CYTOSOL)
+    p = a["power"]
+    print(f"\n   power at n_eff {p['n_effective']:.0f} = {p['power']:.2f}; "
+          f"the raw row count would say {p['power_if_rows_were_independent']:.2f} "
+          f"({p['overstatement_factor']}x)")
+
+
+def s10_execution():
+    print(f"\n{L}\n10. Execution: attributable runs and honest joint uncertainty\n{L}")
+    import numpy as np
+    from atcs.execution import Engine
+    from atcs.propagate import Dependence, Uncertain
+    e = Engine(); e.register("organ_rf", "2.1.0"); e.register("stochastic", "0.1")
+    r = e.run("organ_rf", lambda size_nm: 0.42, {"size_nm": 95.0},
+              taint=Taint.DERIVED, dependence=Dependence.DEPENDENT)
+    print(f"   run {r['run_id']} attributed to organ_rf@2.1.0")
+    chk = e.reproduce_check("stochastic", lambda n: float(np.random.rand()), {"n": 1},
+                            taint=Taint.SIMULATED, dependence=Dependence.UNKNOWN)
+    print(f"   reproducibility: {chk['verdict'][:140]}")
+    stages = [Uncertain(0.30, 0.22, "organ fraction"),
+              Uncertain(0.42, 0.45, "target-cell fraction")]
+    unk = e.compose("chain", stages, Dependence.UNKNOWN)
+    print(f"\n   undeclared dependence -> {unk['interpretation'][:150]}")
+
+
+def s11_m15():
+    print(f"\n{L}\n11. ICH M15: a credibility PLAN, not a qualification\n{L}")
+    from atcs.icm15 import (PROPOSED_FIRST_CONTEXT, credibility_plan, model_risk,
+                           required_activities)
+    r = model_risk(PROPOSED_FIRST_CONTEXT.influence, PROPOSED_FIRST_CONTEXT.consequence)
+    print(f"   influence {r['influence']} x consequence {r['consequence']} "
+          f"-> risk {r['risk_score']} ({r['risk_band']})")
+    plan = credibility_plan(PROPOSED_FIRST_CONTEXT,
+                            ["code_verification", "applicability_bounds",
+                             "sensitivity_analysis", "numerical_verification"])
+    print(f"   required: {len(plan['required_activities'])} activities")
+    print(f"   missing : {plan['missing']}")
+    print(f"\n   {plan['verdict'][:190]}")
+
+
+def s12_planner():
+    print(f"\n{L}\n12. The planner: the rejection log is the output\n{L}")
+    from atcs.models import ORGAN_TO_CYTOSOL
+    from atcs.planner import admissible_plans, plan_advantage
+    from atcs.registry import ContextOfUse, RegisteredModel, Registry
+    from atcs.status import Evidenced, Status
+    reg = Registry()
+    IND = Evidenced(Status.INDEPENDENT, "executed study-grouped diagnostic, Oct 2026")
+    REP = Evidenced(Status.REPORTED, "project-reported benchmark, 20 Oct brief",
+                    what_would_raise_it="independent reproduction on withheld data")
+    for mid, ev, comp in [("organ_rf", IND, "whole_liver_homogenate"),
+                          ("organ_gbm", REP, "whole_liver_homogenate"),
+                          ("cyto_a", REP, "hepatocyte_cytosol_risc")]:
+        reg.register(RegisteredModel(
+            mid, ev, ContextOfUse(species="mouse", compartment=comp,
+                                  question="disposition of lipid carriers",
+                                  descriptor_ranges={"size_nm": (20.0, 200.0)},
+                                  decision="research prioritisation of formulations"),
+            ("size_nm",), "log10 delivery fraction"))
+    taint = {"organ_rf": Taint.MEASURED, "organ_gbm": Taint.MEASURED,
+             "cyto_a": Taint.SIMULATED}
+    res = admissible_plans(
+        reg, [["organ_rf", "organ_gbm"], ["cyto_a"]],
+        stage_contexts=[{"species": "mouse", "compartment": "whole_liver_homogenate"},
+                        {"species": "mouse", "compartment": "hepatocyte_cytosol_risc"}],
+        decision="target-cell exposure", stage_taint=taint, max_taint=Taint.DERIVED,
+        structural=ORGAN_TO_CYTOSOL, target="f_parenchymal")
+    print(f"   enumerated {res['n_enumerated']}, admissible {res['n_admissible']}")
+    print(f"   rejections by condition: {res['rejections_by_condition']}")
+    print(f"   binding on EVERY candidate: "
+          f"{res['conditions_binding_on_every_candidate']}")
+    adv = plan_advantage(res, ["organ_rf", "cyto_a"], taint, Taint.DERIVED)
+    print(f"\n   {adv['verdict'][:190]}")
+
+
 def s9_scope():
     print(f"\n{L}\n9. So what may the chain be used for, today\n{L}")
     for c in ("rank_formulations_within_one_study",
@@ -187,4 +285,5 @@ def s9_scope():
 
 if __name__ == "__main__":
     s1_loop_a(); s2_phase5(); s3_critic(); s4_data()
-    s5_mixing(); s6_loop_b(); s7_reverse(); s8_agents(); s9_scope()
+    s5_mixing(); s6_loop_b(); s7_reverse(); s8_agents()
+    s9_experiment(); s10_execution(); s11_m15(); s12_planner(); s9_scope()

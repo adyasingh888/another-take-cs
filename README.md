@@ -459,3 +459,112 @@ minimal fix the module returns is a flow-sorted parenchymal measurement. Until a
 paired dataset exists, no version of this repository can honestly be 1.0 — and
 raising the number without the measurement would be the one thing every module here
 is built to prevent.
+
+---
+
+# v0.6 — the five engineering components, completed
+
+v0.5 built both loops. v0.6 closes the four pieces the brief's §06 names that were
+still missing, and each turned out to carry a defect worth recording.
+
+![Figure 1]({{artifact:art_PLACEHOLDER}})
+
+## `experiment.py` — a proposal that can be checked
+
+Phase 5 and reverse translation both terminate in "a proposed next experiment", and
+until now that output was a *sentence*. A sentence cannot be checked. Three things
+can:
+
+| check | answerable from | failure means |
+|---|---|---|
+| **identifiability** | `observability` | wrong measurement — pick another |
+| **power** | the variance components | too few groups — scale the design |
+| **decisiveness** | `critic` | wrong condition — vary what the rivals disagree on |
+
+Three failures, three different fixes, so `assess()` names the **binding constraint**
+rather than returning a verdict. The worked example shows why that matters: the
+flow-sorted assay **closes** the parenchymal fraction but is underpowered at 48
+animals, while a larger homogenate series reaches power 0.95 and **closes nothing**.
+Ranked on power alone the useless experiment wins.
+
+Power is computed at the **effective** sample size. At the reported ρ = 0.75–0.88 the
+design effect is 3–6, and a power calculation on the raw row count — the usual
+practice — overstates by that factor, which is larger than most effects anyone is
+looking for. `groups_needed()` solves on *groups*, because repeated measures stop
+buying power once ρ is high (panel **b**).
+
+## `execution.py` — attributable runs, and honest joint uncertainty
+
+The brief asks for runs that are consistent, version-tracked, and preserve *joint*
+uncertainty. The first two are mechanical here; the third is deliberately **not**
+automatic, because preserving joint uncertainty requires knowing the dependence
+structure, which is a scientific input rather than something a framework can infer.
+What the engine does instead is **refuse to call a product of marginals a joint
+uncertainty** — it returns a labelled *bound*. Multiplying marginals and reporting
+the product is most pipelines' default and is wrong whenever stages share a
+parameter, which here they always do: the study offset enters every stage.
+
+`reproduce_check` is the cheapest possible reproducibility test and the one most
+pipelines skip — an unseeded stochastic model fails it immediately and loudly. The
+input digest rounds floats to 12 significant figures first, because without that a
+different BLAS reports irreproducibility where there is none, and a check that
+cries wolf gets ignored.
+
+## `icm15.py` — a credibility plan, not a qualification
+
+ICH M15's organising idea is that required evidence scales with **model risk**, and
+risk has *two* components. The one usually left unassessed is **influence**: a
+low-consequence decision taken *entirely* on a model still carries real risk, because
+nothing else will catch the error — and that is exactly the research-prioritisation
+case this programme proposes.
+
+The brief's own proposed first context is written out as `PROPOSED_FIRST_CONTEXT` so
+it can be assessed rather than asserted. `credibility_plan` returns the **gap** as
+its primary output, and the verdict says "a gated requirement, not a percentage to be
+nearly met" — because a plan reporting 80% complete invites the reading that 80% is
+nearly enough.
+
+## `planner.py` — the rejection log *is* the output
+
+Four conditions, each checked by a different module. Condition 4 is the one a
+workflow built from "which models do we have" never checks at all:
+
+1. stage outputs are acceptable inputs to the next stage — `quantities`
+2. every model is inside its validated context — `registry`
+3. the chain does not launder a simulation — `taint`
+4. **the target is identifiable from the achievable measurements** — `observability`
+
+The search is exhaustive and tiny, because the constraints are tight — and *that is
+the finding*. `plan_advantage` makes the agent question concrete: a fixed workflow
+picks the best model per stage and runs it; if that composition is in the rejection
+log, the advantage is **demonstrated on an instance** rather than argued. When it
+isn't, the function says so and the README says it should not be buried.
+
+## `registry.py` and `status.py` — found missing by a test
+
+`agents.py` named `atcs.registry.Registry.admissible` as the checker for one role,
+and a test asserted only that the string *starts with* `atcs.` — so a module that
+did not exist in this package passed. Both are now implemented here, and the test
+**resolves every declared checker** to a callable. A contract naming a checker nobody
+can call is not a contract.
+
+## Four more errors this repository found in itself (v0.6)
+
+9. **The context was checked once for a whole chain.** A composition's stages operate
+   in *different* compartments — that is what makes it a chain — but `admissible_plans`
+   checked every model against one compartment, so every multi-stage plan was rejected
+   on context. Not harmless: it produced an empty space attributed to the wrong
+   binding constraint, which is precisely what a rejection log must not do.
+10. **The planner short-circuited on the first failing condition**, so the "dominant"
+    rejection condition was an artefact of *check order*. Found by a figure whose
+    title asserted identifiability emptied the space while the bars said provenance.
+    All conditions are now evaluated, and the stronger quantity —
+    `conditions_binding_on_every_candidate` — is reported, because lifting a condition
+    that doesn't block everything changes nothing.
+11. **A figure title asserting a conclusion the figure contradicted.** Panel (c)'s
+    title is now *computed* from the result and cannot disagree with its own bars.
+12. **An experiment could only add one equation.** A flow-sorting run measures every
+    sorted fraction in the same sample; a single-`Observation` spec made every
+    multi-readout assay look insufficient. And `rank()` now **returns no ordering**
+    when nothing closes the target, because a ranked list of equally-uninformative
+    experiments invites running the cheapest, which resolves nothing.

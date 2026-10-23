@@ -200,3 +200,22 @@ def test_every_role_declares_what_it_may_not_do():
     for row in contract_table():
         assert len(row["forbidden"]) > 40
         assert row["checkable_by"].startswith("atcs.")
+
+
+def test_every_declared_checker_actually_resolves():
+    """An earlier version of this test asserted only that `checkable_by` starts with
+    'atcs.', and a role named `atcs.registry.Registry.admissible` while that module
+    did not exist in this package at all -- it lived in a sibling repository. A
+    contract naming a checker nobody can call is not a contract.
+    """
+    import importlib
+    for row in contract_table():
+        parts = row["checkable_by"].split(".")
+        mod = importlib.import_module(".".join(parts[:2]))
+        obj = mod
+        for attr in parts[2:]:
+            assert hasattr(obj, attr), (
+                f"{row['checkable_by']} does not resolve: {attr!r} missing from "
+                f"{obj!r}")
+            obj = getattr(obj, attr)
+        assert callable(obj), f"{row['checkable_by']} resolves but is not callable"

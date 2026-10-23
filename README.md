@@ -467,7 +467,9 @@ is built to prevent.
 v0.5 built both loops. v0.6 closes the four pieces the brief's §06 names that were
 still missing, and each turned out to carry a defect worth recording.
 
-![Figure 1]({{artifact:art_PLACEHOLDER}})
+![Figure 1](/Users/adya/.claude-science/orgs/64ed5608-dae9-4513-a6ea-ced5633f6e69/artifacts/proj_747680c80e15/afafe906-7efa-4dac-a88e-3679587ae292/v1c6899b8_atcs_figure1.png)
+
+*(a) every interface is underdetermined before new measurement. (b) repeated measures stop buying power once ρ is high, and the reported ρ band is shaded. (c) the admissible-composition space, with the conditions that block every candidate. Regenerate: `python figures/make_figure1.py`.*
 
 ## `experiment.py` — a proposal that can be checked
 

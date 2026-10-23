@@ -671,3 +671,88 @@ Both are now prevented structurally rather than individually: a test greps every
 module for imports from the sibling package, and another asserts every name in
 `__all__` actually imports. A standalone install cannot silently depend on a
 repository the user has not cloned.
+
+
+---
+
+# v0.8 — the interval claim, decision value, and a second figure
+
+![Figure 2](/Users/adya/.claude-science/orgs/64ed5608-dae9-4513-a6ea-ced5633f6e69/artifacts/proj_747680c80e15/3521b912-039d-4da9-a7ed-d5155cb1df50/va829a845_atcs_figure2.png)
+
+*(a) R² by split protocol against the train-mean floor. (b) interval width against
+empirical coverage, zero-shot and anchored, over 8 group partitions. (c) variance
+removed against decision value: fully resolving a candidate that was never going to
+be chosen is worth nothing. Regenerate: `python figures/make_figure2.py`.*
+
+## The interval claim, executed
+
+The argument for anchoring was never that R² rises — it is that a formulation chemist
+gets an interval they can act on. `atcs benchmark --intervals` runs it:
+
+| arm | fold-width | empirical coverage (95% CI) |
+|---|---|---|
+| zero-shot | 117× | 0.947 [0.936, 0.957] |
+| anchored, k = 1 | 40× | 0.976 [0.966, 0.983] |
+
+The zero-shot width lands inside the brief's own reported 57–158× range. Three things
+in the construction are load-bearing, and a naive version would report a comfortable
+and wrong answer without them:
+
+- **Calibration gets its own studies.** Split conformal guarantees coverage under
+  exchangeability, and for clustered data the exchangeable unit is the *study*.
+  Calibrating on rows from training studies fits the quantile to within-study
+  residuals, which undercovers on a new study while reporting nominal coverage on its
+  own calibration set.
+- **Coverage is measured on held-out studies**, never on the calibration fold — a
+  conformal interval always covers its calibration data at the nominal rate *by
+  construction*, so reporting that is reporting the construction.
+- **The anchored arm is calibrated on anchored residuals.** Otherwise the quantile
+  describes a different predictor from the one being evaluated.
+
+## Two corrections to my own reporting
+
+**Coverage has three outcomes, not two.** The first version tested whether the
+interval contained nominal and called anything else "NOT retained" — so it reported
+*over*-coverage (0.976 against a nominal 0.90) with the verdict written for
+under-coverage, saying an interval had "stopped covering" when it was covering more
+than required. Those are opposite failures with opposite fixes: `undercovers` means
+the interval is a lie; `conservative` means it is safe but wider than it needs to be,
+and the excess is unexploited narrowing.
+
+**The generator reproduced the variance share without its scale.** It drew each
+component at √(variance *share*), giving a total SD near 1.0 where §6.3 implies about
+0.5 — so the ICC was right and generated fold-widths were two orders too wide to
+compare with the brief at all. `TOTAL_LOG10_SD` now scales both components, which
+preserves the share exactly.
+
+That fix exposed a further point worth stating: **fold-width narrowing is not
+scale-free.** Rescaling moved the same anchoring effect from 10.5× to 3.3× with
+nothing about the method changed, because fold width is 10^(2·half-width). The
+log-width ratio (1.32×) is the scale-invariant figure and is now reported beside it.
+
+## `value.py` — the score that needs a decision to exist
+
+Of the brief's six criteria, decision value is the one that cannot be computed
+without knowing what decision is being made, and it is the one that separates a
+*useful* experiment from an *informative* one:
+
+| experiment | variance removed | EVSI | P(decision changes) |
+|---|---|---|---|
+| resolve the close pair | 0.090 | **0.0946** | 0.44 |
+| resolve the leader only | 0.032 | 0.0536 | 0.41 |
+| **fully** resolve the also-ran | 0.010 | **0** | 0.00 |
+
+The third row is the point. It removes *all* the uncertainty on a candidate and is
+worth nothing, because that candidate was never going to be chosen. Information gain
+and decision value come apart exactly there.
+
+EVSI is gated on its own Monte Carlo standard error — the first version returned
+`worth_running = True` on an EVSI of 1 × 10⁻⁵ for that row, and the correct answer is
+zero. Value is returned in the **units of the decision**, not nats, because a decision
+value must be comparable with the cost of the experiment.
+
+## `ARCHITECTURE.md`
+
+A section-by-section map from the brief to the module that answers it, with what each
+one enforces — plus what a reviewer should attack first (the three refusals and the
+anchor exclusion) and what is deliberately absent.

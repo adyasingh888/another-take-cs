@@ -85,6 +85,17 @@ def _benchmark(args: argparse.Namespace) -> int:
     print()
     out = leak_and_remedy(sc)
     print(out["verdict"])
+    if args.intervals:
+        from .benchmark import interval_scorecard, interval_summary
+        iv = interval_scorecard(df, f"log10_pid_{args.organ}",
+                                ["size_nm", "zeta_mv", "pdi", "dose_mg_per_kg"],
+                                n_repeats=args.repeats, seed=args.seed)
+        s = interval_summary(iv)
+        print()
+        for k, v in s["arms"].items():
+            print(f"  {k:18s} fold-width {v['median_fold_width']:>8.1f}  "
+                  f"coverage {v['empirical_coverage']:.3f} {v['coverage_95ci']}")
+        print(f"\n  {s['verdict']}")
     print(f"\nexercises_protocol={out['exercises_protocol']}  "
           f"measures_performance={out['measures_performance']}")
     if not out["measures_performance"]:
@@ -142,6 +153,9 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--organ", default="liver")
     b.add_argument("--splits", type=int, default=5)
     b.add_argument("--seed", type=int, default=11)
+    b.add_argument("--intervals", action="store_true",
+                   help="also run conformal coverage and width, zero-shot vs anchored")
+    b.add_argument("--repeats", type=int, default=10)
     b.set_defaults(fn=_benchmark)
     v = sub.add_parser("sensitivity", help="Sobol indices and measurement priority")
     v.add_argument("--n-base", dest="n_base", type=int, default=2048)

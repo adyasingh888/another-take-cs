@@ -156,8 +156,19 @@ def _stamp(df: pd.DataFrame, spec: GenerationSpec) -> pd.DataFrame:
     return df
 
 
-def generate_biodistribution(n_studies: int = 86, seed: int = 20261023
-                             ) -> pd.DataFrame:
+#: Total residual SD on log10(%ID/g), implied by the brief's section 6.3: a
+#: zero-shot 90% interval of 0.88-1.10 log10 units means
+#: 1.96 * sqrt(tau0^2 + sigma_e^2) ~ 0.45-0.56, so the total SD is about 0.5.
+#: Before v0.8 the generator drew each component at sqrt(variance SHARE), giving a
+#: total SD near 1.0 -- it reproduced the ICC correctly and the absolute scale
+#: twice too wide, so generated fold-widths were two orders larger than the brief's
+#: and were not comparable to it. The share is what the structure claim rests on;
+#: the scale is what makes an interval width mean anything.
+TOTAL_LOG10_SD = 0.50
+
+
+def generate_biodistribution(n_studies: int = 86, seed: int = 20261023,
+                             total_sd: float = TOTAL_LOG10_SD) -> pd.DataFrame:
     """A study-clustered organ table with the reported between-study variance share.
 
     Reproduces the SHAPE of the problem: 86 study groups, several arms each, and a
@@ -167,7 +178,8 @@ def generate_biodistribution(n_studies: int = 86, seed: int = 20261023
     replication.
     """
     spec = GenerationSpec("generate_biodistribution", 0, n_studies,
-                         "the reported between-study variance share and group structure",
+                         "the reported between-study variance share, group structure, and the "
+                         "absolute log10 residual scale implied by section 6.3",
                          "any reported R2 or absolute %ID value", seed)
     rng = np.random.default_rng(seed)
     organs = list(VARIANCE_DECOMPOSITION)
@@ -175,8 +187,11 @@ def generate_biodistribution(n_studies: int = 86, seed: int = 20261023
     for s in range(n_studies):
         n_arms = int(rng.integers(1, 8))
         study = f"SYN-S{s:03d}"
-        offsets = {o: rng.normal(0, np.sqrt(VARIANCE_DECOMPOSITION[o]["sigma2_study"]))
-                   for o in organs}
+        # scale BOTH components by total_sd so the ICC is preserved exactly while
+        # the absolute spread matches the brief's implied scale
+        offsets = {o: rng.normal(
+            0, total_sd * np.sqrt(VARIANCE_DECOMPOSITION[o]["sigma2_study"]))
+            for o in organs}
         for a in range(n_arms):
             size = float(rng.normal(95, 30)); size = max(size, 20.0)
             zeta = float(rng.normal(-12, 14))
@@ -187,8 +202,8 @@ def generate_biodistribution(n_studies: int = 86, seed: int = 20261023
                    "dose_mg_per_kg": round(float(rng.choice([0.1, 0.3, 1.0, 3.0])), 2),
                    "timepoint_h": int(rng.choice([1, 4, 24, 72, 168]))}
             for o in organs:
-                chem = (-0.004 * (size - 95) + 0.002 * zeta - 1.2 * pdi)
-                noise = rng.normal(0, np.sqrt(
+                chem = total_sd * (-0.004 * (size - 95) + 0.002 * zeta - 1.2 * pdi)
+                noise = rng.normal(0, total_sd * np.sqrt(
                     VARIANCE_DECOMPOSITION[o]["sigma2_chem"]))
                 rec[f"log10_pid_{o}"] = round(float(offsets[o] + chem + noise), 4)
             rows.append(rec)

@@ -256,3 +256,199 @@ def leak_and_remedy(sc: pd.DataFrame, arm: str = "ridge_descriptors") -> dict:
                         f"work', the remedy alone invites 'the model works'."),
             "exercises_protocol": True,
             "measures_performance": bool(sc.measures_performance.all())}
+
+
+# ==========================================================================
+# Intervals: the claim that actually matters
+# ==========================================================================
+#
+# The argument for anchoring is not that R2 rises. It is that a formulation
+# chemist gets an interval they can act on. The brief's section 6.3 makes the
+# quantitative form of the problem explicit: a zero-shot 90% conformal interval on
+# log10(%ID) must span roughly +/- 1.96 * sqrt(tau0^2 + sigma_e^2), which is a 57x
+# to 158x multiplicative fold-width -- honest, and useless for ranking anything.
+#
+# `interval_scorecard` executes that claim rather than restating it. Three things
+# in its construction are load-bearing and are the reason a naive version of this
+# function would report a comfortable and wrong answer:
+#
+#   1. CALIBRATION IS SPLIT AT THE GROUP LEVEL. Split conformal guarantees coverage
+#      under exchangeability, and for clustered data the exchangeable unit is the
+#      STUDY, not the row. Calibrating on rows drawn from studies that also appear
+#      in training gives a quantile fitted to within-study residuals, and the
+#      interval it produces undercovers on a genuinely new study -- while reporting
+#      nominal coverage on its own calibration set.
+#
+#   2. COVERAGE IS MEASURED ON HELD-OUT STUDIES, not on the calibration fold. A
+#      conformal interval always covers its own calibration data at the nominal
+#      rate by construction; reporting that number is reporting the construction.
+#
+#   3. THE ANCHOR ROWS ARE EXCLUDED, as everywhere else in this module. An interval
+#      evaluated on a row whose value was revealed is not an interval.
+
+def _split_three(groups: np.ndarray, *, seed: int = 0,
+                 frac_cal: float = 0.3, frac_test: float = 0.3):
+    """Train / calibrate / test, partitioned BY GROUP.
+
+    Returns index arrays. The split is on groups rather than rows because the
+    exchangeability unit for conformal prediction on clustered data is the study --
+    see the note above. A row-level split here is the single easiest way to produce
+    a conformal interval that reports nominal coverage and does not have it.
+    """
+    rng = np.random.default_rng(seed)
+    uniq = rng.permutation(np.unique(groups))
+    n = len(uniq)
+    n_cal = max(int(round(frac_cal * n)), 2)
+    n_test = max(int(round(frac_test * n)), 2)
+    if n_cal + n_test >= n:
+        raise BenchmarkError(
+            f"{n} groups cannot be split into train/calibrate/test at "
+            f"{frac_cal}/{frac_test}; conformal calibration needs its own groups, "
+            f"so a small corpus must either accept wider intervals or more folds")
+    cal_g, test_g = uniq[:n_cal], uniq[n_cal:n_cal + n_test]
+    cal = np.where(np.isin(groups, cal_g))[0]
+    test = np.where(np.isin(groups, test_g))[0]
+    train = np.where(~np.isin(groups, np.concatenate([cal_g, test_g])))[0]
+    return train, cal, test
+
+
+def interval_scorecard(df: pd.DataFrame, target: str, features: Sequence[str],
+                       group_col: str = "study_id", *, level: float = 0.90,
+                       n_repeats: int = 10, seed: int = 0,
+                       n_anchors: int = 1) -> pd.DataFrame:
+    """Coverage and width, zero-shot against anchored, on held-out studies.
+
+    Repeated over `n_repeats` group partitions because a single partition of a
+    few hundred studies gives a coverage estimate with a wide binomial interval,
+    and a coverage number without its own uncertainty invites over-reading.
+    """
+    from .calibrate import conformal_interval, coverage as cov_fn
+
+    missing = [c for c in [target, group_col, *features] if c not in df.columns]
+    if missing:
+        raise BenchmarkError(f"columns absent from the frame: {missing}")
+    synthetic = bool(df.get("is_synthetic", pd.Series([False])).any())
+    y = df[target].to_numpy(float)
+    X = df[list(features)].to_numpy(float)
+    g = df[group_col].astype(str).to_numpy()
+
+    rows = []
+    for rep in range(n_repeats):
+        train, cal, test = _split_three(g, seed=seed + rep)
+
+        # ---- zero-shot: calibrate on held-out studies, evaluate on others
+        p_cal = predict_ridge(y[train], X[train], X[cal])
+        q = conformal_interval(y[cal] - p_cal, g[cal], level=level)["half_width"]
+        p_test = predict_ridge(y[train], X[train], X[test])
+        c = cov_fn(y[test], p_test - q, p_test + q)
+        rows.append({"repeat": rep, "arm": "zero-shot", "half_width": round(q, 4),
+                     **{k: v for k, v in c.items() if k != "n"},
+                     "n_test_rows": c["n"], "n_test_groups": len(set(g[test]))})
+
+        # ---- anchored: the same, with one revealed measurement per test study
+        mask: list = []
+        p_anc = anchored_predict(y[train], X[train], X[test], groups_test=g[test],
+                                 y_test=y[test], n_anchors=n_anchors,
+                                 seed=seed + rep, anchor_mask_out=mask)
+        keep = ~mask[0]
+        # calibration must ALSO be anchored, or the quantile describes a different
+        # predictor from the one being evaluated
+        mcal: list = []
+        p_cal_a = anchored_predict(y[train], X[train], X[cal], groups_test=g[cal],
+                                   y_test=y[cal], n_anchors=n_anchors,
+                                   seed=seed + rep, anchor_mask_out=mcal)
+        kcal = ~mcal[0]
+        q_a = conformal_interval(y[cal][kcal] - p_cal_a[kcal], g[cal][kcal],
+                                 level=level)["half_width"]
+        ca = cov_fn(y[test][keep], p_anc[keep] - q_a, p_anc[keep] + q_a)
+        rows.append({"repeat": rep, "arm": f"anchored (k={n_anchors})",
+                     "half_width": round(q_a, 4),
+                     **{k: v for k, v in ca.items() if k != "n"},
+                     "n_test_rows": ca["n"], "n_test_groups": len(set(g[test])),
+                     "anchor_rows_excluded": int(mask[0].sum())})
+
+    out = pd.DataFrame(rows)
+    out["nominal_coverage"] = level
+    out["exercises_protocol"] = True
+    out["measures_performance"] = not synthetic
+    return out
+
+
+def interval_summary(iv: pd.DataFrame) -> dict:
+    """The width collapse and whether coverage survived it.
+
+    Both, always. A narrower interval that has stopped covering is not an
+    improvement, it is a worse interval reported more confidently -- and that is the
+    failure mode an anchored method is most likely to have.
+    """
+    from scipy.stats import binomtest
+    out = {}
+    for arm, sub in iv.groupby("arm"):
+        n = int(sub.n_test_rows.sum())
+        k = int(round(float((sub.empirical_coverage * sub.n_test_rows).sum())))
+        ci = binomtest(min(k, n), n).proportion_ci(0.95)
+        out[str(arm)] = {
+            "median_fold_width": round(float(sub.median_fold_width.median()), 2),
+            "mean_half_width_log10": round(float(sub.half_width.mean()), 4),
+            "empirical_coverage": round(k / n, 4),
+            "coverage_95ci": [round(float(ci.low), 4), round(float(ci.high), 4)],
+            "n_test_rows": n, "n_partitions": int(sub.repeat.nunique())}
+    nominal = float(iv.nominal_coverage.iloc[0])
+    zs = out.get("zero-shot")
+    anc = next((v for k, v in out.items() if k.startswith("anchored")), None)
+    if zs is None or anc is None:
+        raise BenchmarkError("the scorecard needs both a zero-shot and an anchored arm")
+    narrowing = zs["median_fold_width"] / max(anc["median_fold_width"], 1e-9)
+
+    # The fold-width narrowing is NOT scale-free, and quoting it alone is
+    # misleading. Fold width is 10^(2 * half_width), so a ratio of fold widths is
+    # 10^(2 * (h_zs - h_anc)) -- it depends on the ABSOLUTE half-widths, not only
+    # their ratio. Rescaling this package's generator to the brief's implied
+    # residual scale moved the same anchoring effect from 10.5x to 3.3x with
+    # nothing about the method changed. The log-width ratio is the scale-invariant
+    # quantity and is reported beside it.
+    log_ratio = (zs["mean_half_width_log10"]
+                 / max(anc["mean_half_width_log10"], 1e-9))
+    lo, hi = anc["coverage_95ci"]
+
+    # THREE outcomes, not two. An earlier version tested whether the interval
+    # contained nominal and called anything else "NOT retained", which reported
+    # over-coverage with the verdict written for under-coverage -- saying an
+    # interval covering 0.966 against a nominal 0.90 had "stopped covering". Those
+    # are opposite failures with opposite fixes and must not share a verdict:
+    #   undercovers   the interval is a lie; the method is unsafe
+    #   calibrated    nominal lies inside the interval
+    #   conservative  wider than it needs to be; safe, but it wastes narrowing
+    if hi < nominal:
+        status = "undercovers"
+        gloss = ("the interval does NOT cover at its nominal rate. A narrower "
+                 "interval that has stopped covering is not an improvement -- it is "
+                 "a worse interval reported more confidently, and it is the failure "
+                 "mode an anchored method is most likely to have.")
+    elif lo > nominal:
+        status = "conservative"
+        gloss = ("coverage EXCEEDS nominal, so the interval is safe but wider than "
+                 "it needs to be -- conservative rather than broken. The excess is "
+                 "unexploited narrowing: a correctly calibrated quantile would give "
+                 "a tighter interval at the same guarantee.")
+    else:
+        status = "calibrated"
+        gloss = "nominal coverage lies inside the interval; the guarantee holds"
+    return {"arms": out, "nominal_coverage": nominal,
+            "narrowing_factor_fold_width": round(narrowing, 2),
+            "narrowing_factor_log_width": round(log_ratio, 3),
+            "scale_note": ("fold-width narrowing is not scale-free: it is "
+                           "10^(2*(h_zs - h_anc)) and so depends on the absolute "
+                           "half-widths. The log-width ratio is scale-invariant and "
+                           "is the quantity to compare across substrates."),
+            "coverage_status": status,
+            "coverage_retained": status != "undercovers",
+            "verdict": (
+                f"the interval narrows {narrowing:.1f}x on fold-width "
+                f"({zs['median_fold_width']:.0f}x to "
+                f"{anc['median_fold_width']:.0f}x), equivalently {log_ratio:.2f}x on "
+                f"log-width, which is the scale-invariant figure; coverage is {status} "
+                f"({anc['empirical_coverage']:.3f}, 95% CI {anc['coverage_95ci']}, "
+                f"nominal {nominal:.2f}). {gloss}"),
+            "exercises_protocol": True,
+            "measures_performance": bool(iv.measures_performance.all())}

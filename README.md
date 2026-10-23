@@ -570,3 +570,104 @@ can call is not a contract.
     multi-readout assay look insufficient. And `rank()` now **returns no ordering**
     when nothing closes the target, because a ranked list of equally-uninformative
     experiments invites running the cheapest, which resolves nothing.
+
+---
+
+# v0.7 — the central claim made runnable
+
+Everything to v0.6 made claims *checkable*. This makes the programme's central
+empirical claim *runnable*, adds the sensitivity analysis M15 requires, and closes
+the cycle so the two loops are a cycle in code rather than two diagrams side by side.
+
+```
+pip install -e .
+atcs vision            # both loops with their gates
+atcs identifiability   # unknowns, equations, and what closes each
+atcs benchmark         # the leak and the remedy, executed
+atcs sensitivity       # Sobol indices and the measurement priority
+atcs data              # write the reported and generated tables
+atcs scope --anchors 3 # what the chain may be used for
+```
+
+## `benchmark.py` — the anchored remedy, executed
+
+Until now "anchoring works" lived in `calibrate` (the estimator), `delta` (the
+algebra) and this README (the prose). None of those is a demonstration. A reviewer
+asked to believe it is entitled to run it:
+
+```
+sibling leakage under a random split: 90.9%
+
+          protocol               arm      r2  median_fold_error  within_2fold   n
+            random        train_mean -0.001              5.663         0.191  555
+            random ridge_descriptors  0.009              5.536         0.207  555
+           grouped        train_mean -0.020              5.833         0.205  555
+           grouped ridge_descriptors -0.004              5.507         0.216  555
+grouped + 1 anchor ridge_descriptors  0.504              3.508         0.295  437
+```
+
+Two design decisions carry the result's honesty:
+
+- **The anchor rows are excluded from the score.** Scoring a row whose answer was
+  revealed is exactly the leak this package exists to catch, and it would inflate the
+  result by precisely the amount the anchor helps. `anchor_mask_out` returns the mask
+  so the exclusion is verifiable, and the row count drops 555 → 437 visibly.
+- **Anchors are drawn at random with a fixed seed.** Choosing the anchor that helps
+  most is a form of test-set selection.
+
+`leak_and_remedy` reports both gaps as a pair, because either alone is misleading:
+the leak alone invites "so the model does not work", the remedy alone invites "so the
+model works". Every row carries `exercises_protocol` and `measures_performance`, and
+on the generated substrate the second is **False** — this evaluates the *protocol*
+against the clustering it will meet, and cannot tell you how well anything predicts
+real biodistribution.
+
+## `sensitivity.py` — and the one product that makes it actionable
+
+Sobol first-order and total-effect indices by the Saltelli estimator, numpy only.
+Both are returned because their difference is the interaction, and on this chain the
+interaction is **45% of the variance** — so a report of first-order indices alone
+understates every parameter. Negative estimates are shown as computed rather than
+clipped, because a negative index is information about the sample size and clipping
+it makes an underpowered analysis look clean.
+
+The actionable part is the join:
+
+| | identifiable | unidentifiable |
+|---|---|---|
+| **high total effect** | already determined — no new assay | **MEASURE THIS** |
+| **low total effect** | ignore | not worth measuring |
+
+Run on the delivery chain, the *highest*-effect parameter — `organ_fraction`, total
+effect 0.39 — falls in the top-left: the output depends on it strongly and it is
+already determined, so measuring it again buys nothing. That is the quadrant most
+often acted on by mistake, because a parameter the model is sensitive to *feels*
+important. The three priorities are the unidentifiable ones, each returned with the
+assay that closes it.
+
+## `loop.py` — the cycle, closed
+
+One function, seven gates, no alternative path — a wide API here would invite
+bypassing a gate. The gate order is the argument, and gate 7 is the one worth stating:
+**re-entry is at Phase 5, never Phase 1.** A clinical surprise enters at the inference
+phase, where it is compared against rival explanations before anything upstream is
+revised. Allowing Phase 1 re-entry would let one unexpected trajectory in 29 patients
+redirect a research programme, which is how a laboratory artefact becomes a research
+direction.
+
+Every gate that *passed* is recorded alongside the ones that did not, because "it
+failed gate 4" is only actionable if you can see that gates 1–3 passed.
+
+## Two more errors, both cross-repository
+
+13. **`agents.py` named `atcs.registry` as a checker while that module lived in the
+    sibling package**, and the test asserted only that the string started with
+    `atcs.`. Fixed in v0.6; the test now resolves every checker to a callable.
+14. **The CLI's `vision` command imported `assessment()` from `atcs.worldmodel`**,
+    which is likewise a `mesoloop` function. Caught immediately by a parametrised
+    test that exercises every subcommand — by *running* the code, not reading it.
+
+Both are now prevented structurally rather than individually: a test greps every
+module for imports from the sibling package, and another asserts every name in
+`__all__` actually imports. A standalone install cannot silently depend on a
+repository the user has not cloned.

@@ -1,0 +1,34 @@
+cff-version: 1.2.0
+title: "Another Take (CS): the bench-bedside nanomedicine programme as a verified dataflow program"
+message: "If you use this software, please cite it."
+type: software
+authors:
+  - family-names: Singh
+    given-names: Adya
+version: 0.1.0
+date-released: 2026-10-23
+license: MIT
+abstract: >-
+  A computer-science reframing of a dual-loop biological intervention world
+  model. The multiscale delivery chain is treated as a verified dataflow program
+  over typed biological quantities, separating claims that are properties of the
+  program -- true by construction and checkable before any data -- from claims
+  that require experimental evidence. Mass conservation is an algebraic identity
+  of a Metzler zero-column-sum generator rather than a fitted property;
+  compositional corona shares lie on the simplex by construction; provenance
+  propagates as an information-flow lattice in which no operation lowers a
+  taint; uncertainty obeys a monotonicity invariant so a composition can never be
+  more certain than its inputs; and the organ-to-cytosol handoff is shown to be
+  structurally unidentifiable from whole-organ measurement, with the minimal
+  additional assays that would close it returned automatically. A credibility
+  gate reads taint and identifiability rather than a declared maturity label, and
+  refuses every patient-facing context of use by construction.
+keywords:
+  - nanomedicine
+  - multiscale modelling
+  - structural identifiability
+  - information flow
+  - uncertainty propagation
+  - conformal prediction
+  - empirical Bayes
+  - model credibility

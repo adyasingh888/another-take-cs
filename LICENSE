@@ -1,0 +1,43 @@
+MIT License
+
+Copyright (c) 2026 Adya Singh
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit substituting persons to whom the Software
+is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+SCOPE OF THIS LICENCE
+
+This licence covers the CODE in this repository. It does not cover, and this
+repository does not redistribute:
+
+  - the scientific architecture of the 20 October 2026 MesoReach briefing, which
+    is the author's own research programme and is described here rather than
+    reproduced;
+  - the Nano-Tumor Database or the Nano-AI-QSAR reference implementation
+    (UFPBPK), which remain under their own terms;
+  - any experimental data. There is none in this repository: every number in the
+    test suite is either a declared parameter, a simulated draw with a fixed
+    seed, or a structural property computed from the code itself.
+
+NOTE ON MODEL STATUS. Nothing here is a validated model of a biological system.
+The mechanistic components exist so that the architecture can be exercised and
+audited; they are not calibrated against experimental data, and
+`atcs.worldmodel.credibility` will refuse every patient-facing context of use by
+construction. Do not use this software to inform a clinical decision.
